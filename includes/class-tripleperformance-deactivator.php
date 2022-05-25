@@ -31,6 +31,8 @@ class Tripleperformance_Deactivator {
 	 */
 	public static function deactivate() {
 
+		wp_clear_scheduled_hook( 'tp_syncArticles' );
+
 	}
 
 }

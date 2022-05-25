@@ -31,6 +31,9 @@ class Tripleperformance_Activator {
 	 */
 	public static function activate() {
 
+		if (! wp_next_scheduled ( 'tp_syncArticles' )) {
+			wp_schedule_event( time(), 'tp_sync_interval', 'tp_syncArticles' ); // DEBUG: 'hourly'
+		}
 	}
 
 }
