@@ -175,8 +175,10 @@ class Tripleperformance {
 
 		$this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_styles' );
 		$this->loader->add_action( 'wp_enqueue_scripts', $plugin_public, 'enqueue_scripts' );
-	}
 
+		$this->loader->add_filter( 'get_canonical_url', $plugin_public, 'edit_canonical_urls', 10, 2 );
+
+	}
 
 	public function my_interval( $schedules ) {
 		$schedules['tp_sync_interval'] = array(
@@ -276,11 +278,16 @@ class Tripleperformance {
 		{
 			$page = reset($result);
 			$title = key($result);
+			$pageId = $page['printouts']['PageId'][0];
+			$existingPostId = self::getPostForPageId($pageId);
 
-			$pagesByType[$title] = ['PageId' => $page['printouts']['PageId'][0]];
+			if ($existingvalues['update'] == 0 && $existingPostId > 0)
+				continue; // Don't update existing posts
+
+			$pagesByType[$title] = ['PageId' => $pageId, 'existingPostId' => $existingPostId];
 
 			if (!empty($page['printouts']['photo']))
-				$pagesByType[$title]['photo'] = $page['printouts']['photo'];
+				$pagesByType[$title]['photo'] = $page['printouts']['photo'][0];
 				// "fulltext":"Fichier:Carton.jpg"
 				// "fullurl":"//wiki.tripleperformance.fr/wiki/Fichier:Carton.jpg"
 		}
@@ -290,9 +297,10 @@ class Tripleperformance {
 
 		foreach ($calls as $titles)
 		{
-			// Now get the page extracts:
+			// Get the page extracts:
 
-			$parameters = [ "prop" => "extracts",
+			$parameters = [ "prop" => "extracts|info",
+							"inprop" => "url",
 							"explaintext" => true,
 							"exintro" => true,
 							"exsectionformat" => "wiki",
@@ -321,10 +329,32 @@ class Tripleperformance {
 					if ($pageData['PageId'] == $pageId)
 					{
 						$pagesByType[$title]['extract'] = $data['extract'];
+						$pagesByType[$title]['canonicalurl'] = $data['fullurl']; // don't use canonicalurl as it is in http and not https
+
 						break;
 					}
 				}
 			}
+		}
+
+		foreach ($pagesByType as $title => $pageData)
+		{
+			// Now get the pages content
+			$url = $wikiURL . "index.php?action=render&curid=" . $pageData['PageId'];
+
+			$ch = curl_init( $url );
+			curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+			curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+			$output = curl_exec( $ch );
+			curl_close( $ch );
+
+			if (empty($output))
+				continue;
+
+			// Fix the relative URLs:
+			$output = preg_replace('@="/([^/])@', '="' . $wikiURL . '$1', $output);
+
+			$pagesByType[$title]['pagecontent'] = $output;
 		}
 
 		foreach ($pagesByType as $title => $pageData)
@@ -358,50 +388,110 @@ class Tripleperformance {
 				'tax_input' (array) An array of taxonomy terms keyed by their taxonomy name. If the taxonomy is hierarchical, the term list needs to be either an array of term IDs or a comma-separated string of IDs. If the taxonomy is non-hierarchical, the term list can be an array that contains term names or slugs, or a comma-separated string of names or slugs. This is because, in hierarchical taxonomy, child terms can have the same names with different parent terms, so the only way to connect them is using ID. Default empty.
 				'meta_input' (array) Array of post meta values keyed by their post meta key. Default empty.
 			*/
-			$args = array(
-				'meta_query' => array(
-					array(
-						'key'   => 'wikipageid',
-						'value' => $pageData['PageId'],
-					)
-				)
-			);
-			$postslist = get_posts( $args );
-
-			$existingPostId = 0;
-			if (!empty($postslist))
-				$existingPostId = $postslist[0]->ID;
-
-			echo '<pre>';
-
-			if ($existingvalues['update'] == 0 && $existingPostId > 0)
-				continue; // Don't update existing posts
-
 			$postData = array(
-				'ID'		    => $existingPostId,
+				'ID'		    => $pageData['existingPostId'],
 				'post_title'    => $title,
-				'post_content'  => $pageData['extract'],
+				'post_content'  => $pageData['pagecontent'],
 				'post_excerpt'  => $pageData['extract'],
 				// 'post_date' => ...
 				'post_author'   => 1,
 				'comment_status' => 'closed',
 				'meta_input' => array(
-					'wikipageid' => $pageData['PageId']
+					'wikipageid' => $pageData['PageId'],
+					'canonical_url' => $pageData['canonicalurl']
 				),
 				//'post_category' => array( 8,39 ),
 				'post_status'   => 'publish'
 			  );
 
+			$pagesByType[$title]['existingPostId'] = wp_insert_post($postData);
 
-			  print_r($postData);
-			$ret = wp_insert_post($postData, true);
+			// Insert the thumbnail when available
+			if (!empty($pageData['photo']['fullurl']))
+			{
+				// "fulltext":"Fichier:Carton.jpg"
+				// "fullurl":"//wiki.tripleperformance.fr/wiki/Fichier:Carton.jpg"
+				require_once( ABSPATH . 'wp-admin/includes/image.php' );
 
+				$pageData['photo']['fulltext'] = str_replace('Fichier:', '', $pageData['photo']['fulltext']);
+				$pageData['photo']['fullurl'] = str_replace('//', 'https://', $pageData['photo']['fullurl']);
+
+				$attachmentId = self::getMediaForImageURL($pageData['photo']['fullurl']);
+
+				if (empty($attachmentId))
+				{
+					$imageURL = str_replace('Fichier:', 'Special:FilePath/', $pageData['photo']['fullurl']);
+
+					$upload = wp_upload_bits($pageData['photo']['fulltext'], null, file_get_contents($imageURL));
+
+					if (isset($upload['error']) && $upload['error'])
+						continue;
+
+					$type = '';
+					if (!empty($upload['type']))
+						$type = $upload['type'];
+					else
+					{
+						$mime = wp_check_filetype($upload['file']);
+						if ($mime)
+							$type = $mime['type'];
+					}
+
+					$attachment = array('post_title' => basename($upload['file']),
+										'post_content' => '',
+										'post_type' => 'attachment',
+										'post_mime_type' => $type,
+										'meta_input' => array(
+											'original_wiki_url' => $pageData['photo']['fullurl']
+										),
+										'guid' => $upload['url']);
+
+					$attachmentId = wp_insert_attachment($attachment, $upload['file'], $pagesByType[$title]['existingPostId']);
+					wp_update_attachment_metadata($attachmentId, wp_generate_attachment_metadata($attachmentId, $upload['file']));
+				}
+
+				update_post_meta($pagesByType[$title]['existingPostId'], '_thumbnail_id', $attachmentId);
+			}
 		}
-		// $to = 'bertrand.gorge@test.com';
-		// $subject = 'The subject ' . date('H:i:s');
-		// $body = 'The email body content<br>' . $existingvalues['selector'] . '<br>' . print_r(array_keys($pagesByType), true);
-		// $headers = array('Content-Type: text/html; charset=UTF-8');
 
-		// wp_mail( $to, $subject, $body, $headers );
+	}
+
+	private static function getPostForPageId($pageId)
+	{
+		$args = array(
+			'meta_query' => array(
+				array(
+					'key'   => 'wikipageid',
+					'value' => $pageId,
+				)
+			)
+		);
+		$postslist = get_posts( $args );
+
+		$existingPostId = 0;
+		if (!empty($postslist))
+			$existingPostId = $postslist[0]->ID;
+
+		return $existingPostId;
+	}
+
+	private static function getMediaForImageURL($imageURL)
+	{
+		$args = array(
+			'post_type'   => 'attachment',
+			'meta_query' => array(
+				array(
+					'key'   => 'original_wiki_url',
+					'value' => $imageURL,
+				)
+			)
+		);
+		$postslist = get_posts( $args );
+
+		$existingMediaId = 0;
+		if (!empty($postslist))
+			$existingMediaId = $postslist[0]->ID;
+
+		return $existingMediaId;
 	}
 }

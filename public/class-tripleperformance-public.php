@@ -100,4 +100,15 @@ class Tripleperformance_Public {
 
 	}
 
+	function edit_canonical_urls( $original_url, $post ) {
+
+		$override_url = get_post_meta( $post->ID, 'canonical_url', true );
+
+		if ( empty( $override_url ) ) {
+			return $original_url;
+		}
+
+		return $override_url;
+	}
+
 }

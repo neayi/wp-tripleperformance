@@ -2,3 +2,86 @@
  * All of the CSS for your public-facing functionality should be
  * included in this file.
  */
+
+.resume-exploitation {
+    font-weight: bold;
+    margin     : 29px 0px 10px 0px;
+    clear      : both;
+}
+
+.resume-exploitation .resume-exploitation-titre {
+    font-size: 16px;
+}
+
+.resume-exploitation .resume-exploitation-container {
+    padding         : 0px 24px 0 24px;
+    border-radius   : 6px;
+    border          : solid 1px #e7e8ed;
+    background-color: #ffffff;
+}
+
+.resume-exploitation .resume-exploitation-container .caracteristique-exploitation {
+    width     : 100px;
+    height    : 100px;
+    position  : relative;
+    text-align: center;
+}
+
+.resume-exploitation .resume-exploitation-container .caracteristique-exploitation p {
+    margin: 0 0 0.3em 0;
+}
+
+.resume-exploitation .resume-exploitation-container .caracteristique-exploitation img {
+    max-width : 60px;
+    max-height: 60px;
+}
+
+.resume-exploitation .resume-exploitation-container .caracteristique-exploitation a {
+    font-weight: bold;
+    color      : #414A64;
+}
+
+.resume-exploitation .resume-exploitation-container .caracteristique-exploitation a:hover {
+    text-decoration: none;
+}
+
+.resume-exploitation .resume-exploitation-container .caracteristique-exploitation span {
+    position      : absolute;
+    width         : 100%;
+    left          : 0px;
+    top           : 59px;
+    font-size     : 12px;
+    line-height   : 1.2;
+    letter-spacing: normal;
+    text-align    : center;
+    color         : #414A64;
+}
+
+
+.mw-parser-output .resume-exploitation-container .justify-content-start {
+    justify-content: flex-start !important;
+}
+
+.mw-parser-output .resume-exploitation-container .flex-wrap {
+    flex-wrap: wrap !important;
+}
+
+.mw-parser-output .resume-exploitation-container .d-flex {
+    display: flex !important;
+}
+
+/* Hide the Table of Content */
+.mw-parser-output div#toc {
+    display: none;
+}
+
+.mw-parser-output div.small-description {
+    color: #757575;
+    font-size: 80%;
+    margin-bottom: 10px;
+    line-height: 22px;
+}
+
+.mw-parser-output .tright {
+    float: right;
+}
