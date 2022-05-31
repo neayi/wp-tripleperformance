@@ -23,7 +23,7 @@
 class Tripleperformance_Activator {
 
 	/**
-	 * Short Description. (use period)
+	 * Synchronize the articles once every hour.
 	 *
 	 * Long Description.
 	 *
@@ -32,7 +32,7 @@ class Tripleperformance_Activator {
 	public static function activate() {
 
 		if (! wp_next_scheduled ( 'tp_syncArticles' )) {
-			wp_schedule_event( time(), 'tp_sync_interval', 'tp_syncArticles' ); // DEBUG: 'hourly'
+			wp_schedule_event( time(), 'hourly', 'tp_syncArticles' ); // DEBUG: 'tp_sync_interval'
 		}
 	}
 

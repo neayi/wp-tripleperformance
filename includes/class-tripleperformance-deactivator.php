@@ -23,7 +23,7 @@
 class Tripleperformance_Deactivator {
 
 	/**
-	 * Short Description. (use period)
+	 * Remove the scheduled task.
 	 *
 	 * Long Description.
 	 *

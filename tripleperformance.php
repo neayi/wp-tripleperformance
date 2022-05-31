@@ -13,7 +13,7 @@
  * @package           Tripleperformance
  *
  * @wordpress-plugin
- * Plugin Name:       Triple Performance
+ * Plugin Name:       Triple Performance1
  * Plugin URI:        https://tripleperformance.fr/
  * Description:       Ce plugin permet d'intégrer des pages du site Triple Performance dans un site WordPress automatiquement
  * Version:           1.0.0

@@ -242,26 +242,16 @@ class Tripleperformance {
 	 */
 	static public function syncArticles()
 	{
-		$existingvalues = get_option('smwquery');
+		$tp_options = get_option('tp_options');
 
-		if (empty($existingvalues))
-			$existingvalues = array();
-
-		if (!isset($existingvalues['selector']))
-			$existingvalues['selector'] = '';
-
-		if (!isset($existingvalues['update']))
-			$existingvalues['update'] = 1;
-
-		if (empty($existingvalues['selector']))
+		if (empty($tp_options['selector']) || empty($tp_options['wiki_url']))
 			return;
 
-		$ask = $existingvalues['selector'] . "|?=Page|?A une photo=photo|?Page_ID=PageId|limit=100"; // TODO: rendre la limite paramétrable
+		$ask = $tp_options['selector'] . "|?=Page|?A une photo=photo|?Page_ID=PageId|limit=100"; // TODO: rendre la limite paramétrable
 
 		$parameters = ["action" => "ask", "api_version" => "3", "query" => $ask, "format" => "json"];
 
-		$wikiURL = 'https://wiki.tripleperformance.fr/';
-		$url = $wikiURL . "api.php?" . http_build_query($parameters);
+		$url = $tp_options['wiki_url'] . "api.php?" . http_build_query($parameters);
 
 		$ch = curl_init( $url );
 		curl_setopt( $ch, CURLOPT_RETURNTRANSFER, true );
@@ -281,15 +271,13 @@ class Tripleperformance {
 			$pageId = $page['printouts']['PageId'][0];
 			$existingPostId = self::getPostForPageId($pageId);
 
-			if ($existingvalues['update'] == 0 && $existingPostId > 0)
+			if ($tp_options['update'] == 0 && $existingPostId > 0)
 				continue; // Don't update existing posts
 
 			$pagesByType[$title] = ['PageId' => $pageId, 'existingPostId' => $existingPostId];
 
 			if (!empty($page['printouts']['photo']))
 				$pagesByType[$title]['photo'] = $page['printouts']['photo'][0];
-				// "fulltext":"Fichier:Carton.jpg"
-				// "fullurl":"//wiki.tripleperformance.fr/wiki/Fichier:Carton.jpg"
 		}
 
 		// Make the subsequent calls by chunk of 10 titles:
@@ -309,7 +297,7 @@ class Tripleperformance {
 							"titles" => implode('|', array_keys($titles)),
 							"redirects" => true ];
 
-			$url = $wikiURL . "api.php?" . http_build_query($parameters);
+			$url = $tp_options['wiki_url'] . "api.php?" . http_build_query($parameters);
 
 			$ch = curl_init( $url );
 			curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -340,7 +328,7 @@ class Tripleperformance {
 		foreach ($pagesByType as $title => $pageData)
 		{
 			// Now get the pages content
-			$url = $wikiURL . "index.php?action=render&curid=" . $pageData['PageId'];
+			$url = $tp_options['wiki_url'] . "index.php?action=render&curid=" . $pageData['PageId'];
 
 			$ch = curl_init( $url );
 			curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -352,65 +340,38 @@ class Tripleperformance {
 				continue;
 
 			// Fix the relative URLs:
-			$output = preg_replace('@="/([^/])@', '="' . $wikiURL . '$1', $output);
+			$output = preg_replace('@="/([^/])@', '="' . $tp_options['wiki_url'] . '$1', $output);
 
 			$pagesByType[$title]['pagecontent'] = $output;
 		}
 
 		foreach ($pagesByType as $title => $pageData)
 		{
-			/*
-				'ID' (int) The post ID. If equal to something other than 0, the post with that ID will be updated. Default 0.
-				'post_author' (int) The ID of the user who added the post. Default is the current user ID.
-				'post_date' (string) The date of the post. Default is the current time.
-				'post_date_gmt' (string) The date of the post in the GMT timezone. Default is the value of $post_date.
-				'post_content' (string) The post content. Default empty.
-				'post_content_filtered' (string) The filtered post content. Default empty.
-				'post_title' (string) The post title. Default empty.
-				'post_excerpt' (string) The post excerpt. Default empty.
-				'post_status' (string) The post status. Default 'draft'.
-				'post_type' (string) The post type. Default 'post'.
-				'comment_status' (string) Whether the post can accept comments. Accepts 'open' or 'closed'. Default is the value of 'default_comment_status' option.
-				'ping_status' (string) Whether the post can accept pings. Accepts 'open' or 'closed'. Default is the value of 'default_ping_status' option.
-				'post_password' (string) The password to access the post. Default empty.
-				'post_name' (string) The post name. Default is the sanitized post title when creating a new post.
-				'to_ping' (string) Space or carriage return-separated list of URLs to ping. Default empty.
-				'pinged' (string) Space or carriage return-separated list of URLs that have been pinged. Default empty.
-				'post_modified' (string) The date when the post was last modified. Default is the current time.
-				'post_modified_gmt' (string) The date when the post was last modified in the GMT timezone. Default is the current time.
-				'post_parent' (int) Set this for the post it belongs to, if any. Default 0.
-				'menu_order' (int) The order the post should be displayed in. Default 0.
-				'post_mime_type' (string) The mime type of the post. Default empty.
-				'guid' (string) Global Unique ID for referencing the post. Default empty.
-				'import_id' (int) The post ID to be used when inserting a new post. If specified, must not match any existing post ID. Default 0.
-				'post_category' (int[]) Array of category IDs. Defaults to value of the 'default_category' option.
-				'tags_input' (array) Array of tag names, slugs, or IDs. Default empty.
-				'tax_input' (array) An array of taxonomy terms keyed by their taxonomy name. If the taxonomy is hierarchical, the term list needs to be either an array of term IDs or a comma-separated string of IDs. If the taxonomy is non-hierarchical, the term list can be an array that contains term names or slugs, or a comma-separated string of names or slugs. This is because, in hierarchical taxonomy, child terms can have the same names with different parent terms, so the only way to connect them is using ID. Default empty.
-				'meta_input' (array) Array of post meta values keyed by their post meta key. Default empty.
-			*/
 			$postData = array(
 				'ID'		    => $pageData['existingPostId'],
 				'post_title'    => $title,
 				'post_content'  => $pageData['pagecontent'],
 				'post_excerpt'  => $pageData['extract'],
-				// 'post_date' => ...
 				'post_author'   => 1,
 				'comment_status' => 'closed',
 				'meta_input' => array(
 					'wikipageid' => $pageData['PageId'],
 					'canonical_url' => $pageData['canonicalurl']
 				),
-				//'post_category' => array( 8,39 ),
 				'post_status'   => 'publish'
 			  );
+
+			if (!empty($tp_options['category']))
+				$postData['post_category'][] = $tp_options['category'];
+
+			if (!empty($tp_options['author']))
+				$postData['post_author'] = $tp_options['author'];
 
 			$pagesByType[$title]['existingPostId'] = wp_insert_post($postData);
 
 			// Insert the thumbnail when available
 			if (!empty($pageData['photo']['fullurl']))
 			{
-				// "fulltext":"Fichier:Carton.jpg"
-				// "fullurl":"//wiki.tripleperformance.fr/wiki/Fichier:Carton.jpg"
 				require_once( ABSPATH . 'wp-admin/includes/image.php' );
 
 				$pageData['photo']['fulltext'] = str_replace('Fichier:', '', $pageData['photo']['fulltext']);

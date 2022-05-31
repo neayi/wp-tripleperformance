@@ -106,88 +106,155 @@ class Tripleperformance_Admin {
 			return;
 		}
 
-		// alternate action : action="<?php menu_page_url( 'triple-performance' ) ? >"
+		$existingvalues = get_option('tp_options');
+
 		?>
 		<div class="wrap">
 			<h1><?php echo esc_html( get_admin_page_title() ); ?></h1>
-			<form action="options.php" method="post">
-				<?php
-				// output security fields for the registered setting "wporg_options"
-				settings_fields( 'tripleperformance_options' );
-
-				$existingvalues = get_option('smwquery');
-
-				if (empty($existingvalues))
-					$existingvalues = array();
-
-				if (!isset($existingvalues['selector']))
-					$existingvalues['selector'] = '';
-
-				if (!isset($existingvalues['update']))
-					$existingvalues['update'] = 1;
-
-				?>
+			<form action="options.php" method="post"><?php settings_fields( 'tripleperformance_options' ); ?>
 				<table class="form-table">
-					<tr valign="top"><th scope="row">Selecteur</th>
-						<td><textarea name="smwquery[selector]"
+					<tr valign="top"><th scope="row">URL de la plateforme</th>
+						<td><input type="text" name="tp_options[wiki_url]" size="50"
+          						   placeholder="https://wiki.tripleperformance.fr/" value="<?php echo htmlspecialchars($existingvalues['wiki_url']); ?>"></td>
+					</tr>
+					<tr valign="top"><th scope="row">Requête SMW <sup>[<a href="https://www.semantic-mediawiki.org/wiki/Help:Selecting_pages" target="_blank">?</a>]</sup></th>
+						<td><textarea name="tp_options[selector]"
           							rows="5" cols="100" placeholder="[[Category:Fiches Dephy - Pratiques remarquables]][[A un type de page::Exemple de mise en œuvre]]"><?php echo $existingvalues['selector']; ?></textarea></td>
 					</tr>
 					<tr valign="top"><th scope="row">Mettre à jour les articles déjà importés</th>
-						<td><input name="smwquery[update]" type="checkbox" value="1" <?php checked('1', $existingvalues['update']); ?> /></td>
+						<td><input name="tp_options[update]" type="checkbox" value="1" <?php checked('1', $existingvalues['update']); ?> /></td>
 					</tr>
+					<tr valign="top"><th scope="row">Catégorie des articles importés</th>
+						<td><?php wp_dropdown_categories(  ['name' => 'tp_options[category]',
+															'selected' => $existingvalues['category'],
+															'hide_empty' => 0] ); ?></td>
+					</tr>
+					<tr valign="top"><th scope="row">Auteur des articles importés</th>
+						<td><?php wp_dropdown_users(  ['name' => 'tp_options[author]',
+													   'selected' => $existingvalues['author']] ); ?></td>
+					</tr>
+
 				</table>
 				<?php
 				// output save settings button
 				submit_button( __( 'Save Settings', 'textdomain' ) );
 				?>
 			</form>
+			<p>NB : L'import des articles se fait toutes les heures.</p>
 		</div>
 		<?php
+
+		if (!empty($existingvalues['selector']))
+		{
+			$this->showTemporaryPages($existingvalues['selector'], $existingvalues['wiki_url']);
+		}
 	}
 
 	/**
-	 * Get the value from the POST (if any), and deal with it
+	 * Preview what's going to be imported eventually
 	 */
-	public function options_page_html_submit() {
-		// check user capabilities
-		if ( ! current_user_can( 'manage_options' ) ) {
+	private function showTemporaryPages($selector, $wikiURL)
+	{
+		$ask = $selector . "|?=Page|?Page_ID=PageId|limit=100|sort=Page_ID|order=desc";
+
+		$parameters = ["action" => "ask", "api_version" => "3", "query" => $ask, "format" => "json"];
+
+		$url = $wikiURL . "api.php?" . http_build_query($parameters);
+
+		$ch = curl_init( $url );
+		curl_setopt( $ch, CURLOPT_RETURNTRANSFER, true );
+		curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+		$output = curl_exec( $ch );
+		curl_close( $ch );
+
+		$result = json_decode( $output, true );
+
+		if (empty($result['query']['results']))
 			return;
+
+		$count = 0;
+
+		$pagesCount = count($result['query']['results']);
+		echo "<p>$pagesCount pages ont été trouvées et seront importées :</p>";
+
+		echo "<ul style=\"list-style: disc;margin-left: 2em;\">";
+		foreach ($result['query']['results'] as $result)
+		{
+			$page = reset($result);
+			$title = key($result);
+			$pageId = $page['printouts']['PageId'][0];
+
+			$pagesByType[$title] = ['PageId' => $pageId, 'title' => $title];
+
+			echo "<li><a href=\"".$wikiURL."index.php?curid=$pageId\" target=\"_blank\">$title</a></li>";
+
+			$count++;
+
+			if ($count > 5)
+				break;
 		}
 
-		// get the value from the POST (if any), and deal with it
+		if ($count <= $pagesCount)
+			echo "<li>...</li>";
 
+		echo '</ul>';
 	}
 
 	public function add_admin_submenu()
 	{
-		$hookname = add_options_page(
+		add_options_page(
 			'Triple Performance',
 			'Triple Performance',
 			'manage_options',
 			'triple-performance',
 			array($this, 'options_page_html')
 		);
-
-		add_action( 'load-' . $hookname, array($this, 'options_page_html_submit') );
 	}
 
+	/**
+	 * Explicitely sanitize each field. Note that if not specified in this function the
+	 * field will not be saved at all.
+	 *
+	 * Accepts an array, returns a sanitized array.
+	 */
+	public function settings_validate($input)
+	{
+		$output = array();
 
-	// Sanitize and validate input. Accepts an array, return a sanitized array.
-	public function settings_validate($input) {
 		// Our first value is either 0 or 1
-		$input['update'] = ( $input['update'] == 1 ? 1 : 0 );
+		$output['update'] = ( $input['update'] == 1 ? 1 : 0 );
+
+		$urlParts = parse_url($input['wiki_url']);
+
+		if (empty($urlParts['scheme']))
+			$urlParts['scheme'] = 'https';
+		if (empty($urlParts['host']))
+			$urlParts['host'] = 'wiki.tripleperformance.fr';
+
+		$output['wiki_url'] = $urlParts['scheme'] . '://' . $urlParts['host'] . '/';
 
 		// Say our second option must be safe text with no HTML tags
-		// $input['selector'] =  wp_filter_nohtml_kses($input['selector']);
+		// $output['selector'] =  wp_filter_nohtml_kses($input['selector']);
+		$output['selector'] = $input['selector'];
 
-		return $input;
+		$output['category'] = intval($input['category']);
+
+		$output['author'] = intval($input['author']);
+
+		return $output;
 	}
 
 	public function register_setting()
 	{
-		// register_setting( string $option_group, string $option_name, array $args = array() )
-		register_setting( 'tripleperformance_options', 'smwquery', array($this, 'settings_validate'));
+		$args = ['type' => 'array',
+				 'sanitize_callback' => array($this, 'settings_validate'),
+				 'default' => array('update' => 1,
+				 					'selector' => '',
+									'wiki_url' => 'https://wiki.tripleperformance.fr/',
+									'category' => 0,
+									'author' => 1)];
 
+		register_setting( 'tripleperformance_options', 'tp_options', $args);
 	}
 
 }
