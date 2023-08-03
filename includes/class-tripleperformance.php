@@ -182,7 +182,7 @@ class Tripleperformance {
 
 	public function my_interval( $schedules ) {
 		$schedules['tp_sync_interval'] = array(
-			'interval' => 5, // seconds
+			'interval' => 60 * 60, // in seconds
 			'display' => __( 'Triple Performance Sync Interval' )
 		);
 
